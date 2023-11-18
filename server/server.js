@@ -12,58 +12,76 @@ const io = socketIO(server, {
   cors: corsOptions,
 });
 
-users=[]
-
+users = [];
 
 io.on("connection", (socket) => {
-  socket.on('join', function(room) {
+  socket.on("join", function (room) {
     socket.join(room);
-    console.log("room joined")
-});
+    console.log("room joined");
+  });
   //socket.join(mainRoom);
-  users.push(socket.id)
-  console.log("list of users  "+ users)
+  users.push(socket.id);
+  console.log("list of users  " + users);
   io.emit("userList", users);
-  
-  console.log(`A user connected with id ${socket.id}`);
 
+  console.log(`A user connected with id ${socket.id}`);
 
   socket.on("call", (offerJson) => {
     const offer = JSON.parse(offerJson);
     if (offer.type === "offer") {
-      // Extract the target user's socket.id (e.g., from the offer data)
-    //  const targetSocketId = offer.targetUserId; 
       const targetSocketId = offer.targetUserId;
       const yourSocketId = offer.yourSocketId;
-      console.log("myid : "+yourSocketId)
-      console.log("sender id : "+targetSocketId)
-
-// Replace with the actual source of the targetSocketId
+      console.log("myid : " + yourSocketId);
+      console.log("sender id : " + targetSocketId);
       socket.to(targetSocketId).emit("offer", offer);
-      
-       if (targetSocketId) {
-    
-       console.log(`Offer sent to user with socket.id: ${targetSocketId}`);
+
+      if (targetSocketId) {
+        console.log(`Offer sent to user with socket.id: ${targetSocketId}`);
       } else {
-         console.log("Target user's socket.id not found in the offer.");
+        console.log("Target user's socket.id not found in the offer.");
       }
-     //}
+    }
+
+    const iceCandidate = offerJson.iceCandidate;
+    if (iceCandidate) {
+      socket.to(targetSocketId).emit("ice-candidate", {
+        targetUserId: targetSocketId,
+        yourSocketId: yourSocketId,
+        candidate: iceCandidate,
+      });
     }
   });
-  
+
+  socket.on("ice-candidate", (data) => {
+    const { targetUserId, candidate, yourSocketId } = data;
+
+    // Check if the target user exists in your 'users' object
+    if (users[targetUserId]) {
+      const targetSocketId = users[targetUserId];
+
+      // Send the ICE candidate to the target user
+      io.to(targetSocketId).emit("ice-candidate-from-server", {
+        candidate,
+        senderSocketId: yourSocketId,
+      });
+    } else {
+      console.log("Target user not found");
+      // Handle scenarios where the target user is not found
+    }
+  });
 
   socket.on("answer2", (answerJson) => {
-    const answerJson1 = JSON.parse(answerJson);
-    const targetSocketId = answerJson1.targetUserId;
-    const yourSocketId = answerJson1.yourSocketId;
-    console.log("my id  :"+yourSocketId)
-    // Parse the received JSON string back into an object
-   // const answer = JSON.parse(answerJson);
-    // if (answer.type === "answer") {
-      socket.to(yourSocketId).emit("answer2", answerJson1);
+    const answerData = JSON.parse(answerJson);
+    if (answerData.type === "answer") {
+      const targetSocketId = answerData.targetUserId;
+      const yourSocketId = answerData.yourSocketId;
+      console.log("my id  :" + yourSocketId);
+      socket.to(yourSocketId).emit("answer2", answerJson);
       console.log("answer sent to all users except the sender");
-    // }
-    // console.log('answer is not of type answer')
+    } else {
+      console.log("Received data is not of type 'answer'.");
+      // Handle the case when the received data is not an answer
+    }
   });
 
   socket.on("disconnect", () => {
@@ -75,7 +93,6 @@ io.on("connection", (socket) => {
     }
     // Emit the updated list of connected users to all clients
     io.emit("userList", users);
-    
   });
 });
 
